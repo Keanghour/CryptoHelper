@@ -1,36 +1,37 @@
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 import base64
 import hashlib
 
+
 class AESEncryptionDecryption:
-    def __init__(self):
-        self.key = None
-        self.secret_key = None
+    @staticmethod
+    def set_key(secret):
+        key = hashlib.sha1(secret.encode('utf-8')).digest()[:16]
+        return key
 
-    def encrypt_aes(self, str_to_encrypt, secret):
-        try:
-            self.set_key(secret)
-            cipher = AES.new(self.secret_key, AES.MODE_ECB)  # Using ECB mode
-            encrypted_data = cipher.encrypt(pad(str_to_encrypt.encode(), AES.block_size))  # Padding to block size
-            return base64.b64encode(encrypted_data).decode('utf-8')  # Return base64 encoded encrypted data
-        except Exception as e:
-            print(f"Error while encrypting: {e}")
-        return None
+    @staticmethod
+    def encrypt_aes(data, secret):
+        key = AESEncryptionDecryption.set_key(secret)
+        cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
+        encryptor = cipher.encryptor()
+        padded_data = data + (16 - len(data) % 16) * chr(16 - len(data) % 16)  # Padding to AES block size (16)
+        encrypted = encryptor.update(padded_data.encode('utf-8')) + encryptor.finalize()
+        return base64.b64encode(encrypted).decode('utf-8')  # Return base64-encoded encrypted data
 
-    def decrypt_aes(self, str_to_decrypt, secret):
+    @staticmethod
+    def decrypt_aes(encrypted_data, secret):
+        key = AESEncryptionDecryption.set_key(secret)
+        cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
+        decryptor = cipher.decryptor()
+        
+        # Ensure base64 padding is correct
         try:
-            self.set_key(secret)
-            cipher = AES.new(self.secret_key, AES.MODE_ECB)
-            decrypted_data = unpad(cipher.decrypt(base64.b64decode(str_to_decrypt)), AES.block_size).decode('utf-8')  # Unpadding
-            return decrypted_data
+            encrypted_data_bytes = base64.b64decode(encrypted_data + '=='[(len(encrypted_data) % 4):])  # Fix padding issue
         except Exception as e:
-            print(f"Error while decrypting: {e}")
-        return None
-
-    def set_key(self, my_key):
-        try:
-            self.key = hashlib.sha1(my_key.encode()).digest()[:16]  # Ensure the key is 16 bytes long
-            self.secret_key = self.key
-        except Exception as e:
-            print(f"Error setting key: {e}")
+            raise ValueError("Base64 decoding error: " + str(e))
+        
+        decrypted = decryptor.update(encrypted_data_bytes) + decryptor.finalize()
+        padding_length = decrypted[-1]
+        
+        return decrypted[:-padding_length].decode('utf-8')  # Return decrypted data

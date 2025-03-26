@@ -1,17 +1,31 @@
+import base64
+import random
+import string
 import sys
 import pyperclip
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                              QTextEdit, QPushButton, QTabWidget, QComboBox, QCheckBox, QGroupBox,
                              QFormLayout, QMessageBox)
+from PyQt5.QtGui import QIcon
+
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
 
 from aes_encryption import AESEncryptionDecryption
+from aes_key_generator import AESKeyGenerator
+from data_converter import DataConverter
 from password_generator import PasswordGenerator
 
 class ToolHelperApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Tool Helper")
+        
+        # Set the window icon/logo (replace 'logo.png' with your logo file path)
+        self.setWindowIcon(QIcon('logo.png'))
+        
         self.setGeometry(100, 100, 800, 600)
         self.setFixedSize(800, 600)
 
@@ -28,22 +42,30 @@ class ToolHelperApp(QMainWindow):
         self.create_aes_tab()
         self.create_rsa_tab()
         self.create_password_tab()
+        self.create_data_converter_tab()
+        
+        self.converter = DataConverter()
 
     def create_encryption_tab(self):
         tab = QWidget()
-        self.notebook.addTab(tab, "Encryption/Decryption")
+        self.notebook.addTab(tab, "AES-Encryption/Decryption")
 
         layout = QVBoxLayout(tab)
 
         # Key Entry
         layout.addWidget(QLabel("Secret Key"))
-        self.key_entry = QLineEdit()
+        self.key_entry = QLineEdit("=FIQpAaQHXRHelgGiCgPliXDtuaWHpywZFDwmNtOPeRyYOtGUFw")
         layout.addWidget(self.key_entry)
 
-        # Data Entry
-        layout.addWidget(QLabel("Data"))
+        # Data Entry (for Encryption)
+        layout.addWidget(QLabel("Data Encryption"))
         self.data_text = QTextEdit()
         layout.addWidget(self.data_text)
+
+        # Encrypted Data Entry (for Decryption)
+        layout.addWidget(QLabel("Data Decryption"))
+        self.encrypted_data_text = QTextEdit()
+        layout.addWidget(self.encrypted_data_text)
 
         # Encrypt and Decrypt Buttons
         button_layout = QHBoxLayout()
@@ -68,7 +90,7 @@ class ToolHelperApp(QMainWindow):
 
         # Connect buttons to their respective actions
         encrypt_button.clicked.connect(self.encrypt_data)
-        decrypt_button.clicked.connect(self.decrypt_data)  # Connect to decrypt_data
+        decrypt_button.clicked.connect(self.decrypt_data)
         copy_button.clicked.connect(self.copy_result)
         clear_button.clicked.connect(self.clear_encryption_fields)
 
@@ -84,7 +106,7 @@ class ToolHelperApp(QMainWindow):
         layout.addWidget(self.aes_size)
         
         generate_button = QPushButton("Generate")
-        generate_button.clicked.connect(self.generate_aes_key)
+        generate_button.clicked.connect(self.generate_aes_key)  # Connect to method for AES key generation
         layout.addWidget(generate_button)
         
         layout.addWidget(QLabel("Passphrase (Optional):"))
@@ -113,17 +135,17 @@ class ToolHelperApp(QMainWindow):
         
         layout.addWidget(QLabel("Key Size (Bit):"))
         self.rsa_size = QComboBox()
-        self.rsa_size.addItems(["512", "1024", "2048", "3072", "4096"])
+        self.rsa_size.addItems(["1024", "2048", "3072", "4096"])
         layout.addWidget(self.rsa_size)
         
         layout.addWidget(QLabel("Output Format:"))
         self.format_var = QComboBox()
-        self.format_var.addItems(["PKCS-1", "PKCS-8", "Open SSH", "Putty"])
+        self.format_var.addItems(["PKCS-1", "PKCS-8", "Putty"])
         layout.addWidget(self.format_var)
         
-        layout.addWidget(QLabel("SSH format (Optional):"))
-        self.ssh_entry = QLineEdit()
-        layout.addWidget(self.ssh_entry)
+        # layout.addWidget(QLabel("SSH format (Optional):"))
+        # self.ssh_entry = QLineEdit()
+        # layout.addWidget(self.ssh_entry)
         
         layout.addWidget(QLabel("Passphrase (Optional):"))
         self.rsa_passphrase_entry = QLineEdit()
@@ -171,7 +193,7 @@ class ToolHelperApp(QMainWindow):
         
         layout.addWidget(QLabel("Password Length:"))
         self.password_length = QComboBox()
-        self.password_length.addItems([str(i) for i in [8, 12, 16, 20, 24]])
+        self.password_length.addItems([str(i) for i in [8, 9, 12, 16, 20, 24, 36, 42, 50]])
         layout.addWidget(self.password_length)
         
         # Password Options
@@ -200,11 +222,96 @@ class ToolHelperApp(QMainWindow):
         button_layout.addWidget(clear_button)
         layout.addLayout(button_layout)
 
+    def create_data_converter_tab(self):
+        """Create a tab for data conversion."""
+        tab = QWidget()
+        self.notebook.addTab(tab, "Data Converter")
+
+        layout = QVBoxLayout(tab)
+
+        # Input format selection (JSON, XML, XSD)
+        layout.addWidget(QLabel("Select Input Format"))
+        self.input_format = QComboBox()
+        self.input_format.addItems(["JSON", "XML", "XSD"])
+        layout.addWidget(self.input_format)
+
+        # Output format selection (JSON, XML, XSD)
+        layout.addWidget(QLabel("Select Output Format"))
+        self.output_format = QComboBox()
+        self.output_format.addItems(["JSON", "XML", "XSD"])
+        layout.addWidget(self.output_format)
+
+        # Text area for input data
+        layout.addWidget(QLabel("Input Data"))
+        self.input_data = QTextEdit()
+        layout.addWidget(self.input_data)
+
+        # Text area for converted output data
+        layout.addWidget(QLabel("Converted Output"))
+        self.output_data = QTextEdit()
+        layout.addWidget(self.output_data)
+
+        # Convert button
+        convert_button = QPushButton("Convert")
+        convert_button.clicked.connect(self.convert_data)
+        layout.addWidget(convert_button)
+
+        # Clear button
+        clear_button = QPushButton("Clear")
+        clear_button.clicked.connect(self.clear_converter_fields)
+        layout.addWidget(clear_button)
+
+    def convert_data(self):
+        """Handle data conversion based on selected formats."""
+        input_format = self.input_format.currentText()
+        output_format = self.output_format.currentText()
+        input_data = self.input_data.toPlainText().strip()
+
+        if not input_data:
+            self.show_message("Please provide input data.")
+            return
+
+        converter = DataConverter()  # Create instance of the converter
+
+        try:
+            if input_format == "JSON" and output_format == "XML":
+                result = converter.json_to_xml(input_data)
+            elif input_format == "XML" and output_format == "JSON":
+                result = converter.xml_to_json(input_data)
+            elif input_format == "XML" and output_format == "XSD":
+                result = converter.xml_to_xsd(input_data)
+            elif input_format == "XSD" and output_format == "XML":
+                result = converter.xsd_to_xml(input_data)
+            elif input_format == "JSON" and output_format == "JSON":
+                result = converter.pretty_json(input_data)
+            elif input_format == "XML" and output_format == "XML":
+                result = converter.pretty_xml(input_data)
+            else:
+                self.show_message("Unsupported conversion format.")
+                return
+
+            self.output_data.setPlainText(result)
+        except Exception as e:
+            self.show_message(f"Conversion error: {str(e)}")
+
+
+
+    def show_message(self, message):
+        """Display error message."""
+        QMessageBox.warning(self, "Error", message)
+
+    def clear_converter_fields(self):
+        """Clear all input/output fields.""" 
+        self.input_data.clear()
+        self.output_data.clear()
+
+
+
     # Helper Methods
     def encrypt_data(self):
         secret = self.key_entry.text().strip()
         data = self.data_text.toPlainText().strip()
-        
+
         if secret and data:
             aes = AESEncryptionDecryption()
             encrypted_data = aes.encrypt_aes(data, secret)
@@ -212,18 +319,24 @@ class ToolHelperApp(QMainWindow):
                 self.result_text.setPlainText(encrypted_data)
             else:
                 self.show_message("Error during encryption")
+        else:
+            self.show_message("Please enter both secret key and data.")
 
-    def decrypt_data(self):  # Add the decrypt_data method here
+    def decrypt_data(self):
         secret = self.key_entry.text().strip()
-        encrypted_data = self.result_text.toPlainText().strip()
-        
-        if secret and encrypted_data:
-            aes = AESEncryptionDecryption()
-            decrypted_data = aes.decrypt_aes(encrypted_data, secret)
-            if decrypted_data:
-                self.result_text.setPlainText(decrypted_data)
-            else:
-                self.show_message("Error during decryption")
+        encrypted_data = self.encrypted_data_text.toPlainText().strip()  # Updated to use the new field
+
+        if not secret or not encrypted_data:
+            self.show_message("Please enter both secret key and encrypted data.")
+            return
+
+        aes = AESEncryptionDecryption()
+        decrypted_data = aes.decrypt_aes(encrypted_data, secret)
+
+        if decrypted_data:
+            self.result_text.setPlainText(decrypted_data)
+        else:
+            self.show_message("Decryption failed. Please check the data or key.")
 
     def copy_result(self):
         result = self.result_text.toPlainText().strip()
@@ -238,10 +351,42 @@ class ToolHelperApp(QMainWindow):
         self.result_text.clear()
 
     def generate_aes_key(self):
-        key_size = self.aes_size.currentText()
-        passphrase = self.aes_passphrase_entry.text()
-        result = f"AES Key (Size: {key_size}):\n{passphrase}"
-        self.aes_result.setPlainText(result)
+        key_size = int(self.aes_size.currentText())  # Get the key size from the combo box
+        passphrase = self.aes_passphrase_entry.text().strip()  # Get the passphrase from the input
+        
+        # If no passphrase is entered, generate a random passphrase
+        if not passphrase:
+            passphrase = self.generate_random_passphrase()
+
+        # Create an instance of the AESKeyGenerator
+        key_generator = AESKeyGenerator()
+        
+        # Generate the AES key
+        aes_key = key_generator.generate_aes_key(passphrase, key_size)
+
+        # Display the generated AES key and passphrase (optional)
+        result_text = f"AES Key (Size: {key_size}): {aes_key}\n\n"
+        
+        # Show passphrase if it was generated or entered
+        result_text += f"Passphrase (Optional): {passphrase}"
+
+        # Set the result in the result field
+        self.aes_result.setPlainText(result_text)
+
+
+    def generate_random_passphrase(self, length=16):
+        """
+        Generate a random passphrase consisting of letters and digits.
+        
+        Args:
+            length (int): The length of the random passphrase.
+        
+        Returns:
+            str: The generated random passphrase.
+        """
+        characters = string.ascii_letters + string.digits
+        random_passphrase = ''.join(random.choice(characters) for _ in range(length))
+        return random_passphrase
 
     def copy_aes_key(self):
         aes_key = self.aes_result.toPlainText().strip()
@@ -254,14 +399,64 @@ class ToolHelperApp(QMainWindow):
         self.aes_passphrase_entry.clear()
         self.aes_result.clear()
 
+    # This will be used for key generation
     def generate_rsa_keys(self):
-        key_size = self.rsa_size.currentText()
+        # Get the selected key size and format
+        key_size = int(self.rsa_size.currentText())
         key_format = self.format_var.currentText()
         passphrase = self.rsa_passphrase_entry.text()
-        result_pub = f"Public Key (Size: {key_size}, Format: {key_format}):\n{passphrase}"
-        result_priv = f"Private Key (Size: {key_size}, Format: {key_format}):\n{passphrase}"
-        self.rsa_pub_text.setPlainText(result_pub)
-        self.rsa_priv_text.setPlainText(result_priv)
+
+        # Validate key size
+        if key_size < 1024:
+            self.show_message("Error: RSA key size must be at least 1024 bits.")
+            return
+
+        # Generate RSA keys using cryptography
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=key_size,
+        )
+
+        # Generate the public key from the private key
+        public_key = private_key.public_key()
+
+        # Serialize the private key based on the selected format
+        if key_format == "PKCS-1":
+            private_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+        elif key_format == "PKCS-8":
+            private_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption() if not passphrase else serialization.BestAvailableEncryption(passphrase.encode())
+            )
+        elif key_format == "Open SSH":
+            private_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.OpenSSH,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+        elif key_format == "Putty":
+            private_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+            # Convert to Putty format (this will need a helper function like `putty_tools`)
+            # Note: You might need an external library for this conversion, which I'll assume is handled elsewhere.
+
+        # Serialize the public key in PEM format (standard for all formats)
+        public_pem = public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+
+        # Set the public and private key in the text boxes
+        self.rsa_pub_text.setPlainText(public_pem.decode('utf-8'))
+        self.rsa_priv_text.setPlainText(private_pem.decode('utf-8'))
 
     def copy_public_key(self):
         pub_key = self.rsa_pub_text.toPlainText().strip()
